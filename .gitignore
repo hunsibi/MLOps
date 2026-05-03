@@ -1,0 +1,40 @@
+# Environment
+.env
+!.env.example
+
+# Data directories (large files, user data)
+data/raw/
+data/label_studio/
+data/*.db
+data/*.json
+
+# MLflow artifacts & DB
+mlflow/mlflow.db
+mlflow/artifacts/
+
+# Trained model weights (keep pretrained stubs)
+models/*.pt
+models/*.pth
+models/runs/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+venv/
+dist/
+build/
+
+# Node / Next.js
+ui/node_modules/
+ui/.next/
+ui/.env.local
+
+# Claude Code
+.claude/settings.local.json
+
+# OS
+.DS_Store
+Thumbs.db
