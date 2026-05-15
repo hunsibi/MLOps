@@ -7,14 +7,18 @@ data/raw/
 data/label_studio/
 data/*.db
 data/*.json
+data/logs/
+data/exports/
+data/runs/
+data/splits/
 
 # MLflow artifacts & DB
 mlflow/mlflow.db
 mlflow/artifacts/
 
 # Trained model weights (keep pretrained stubs)
-models/*.pt
-models/*.pth
+models/**/*.pt
+models/**/*.pth
 models/runs/
 
 # Python

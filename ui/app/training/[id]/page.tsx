@@ -3,8 +3,6 @@ import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { getTrainingJob, getRun } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
-
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 const STATUS_COLOR: Record<string, string> = {
   running: "text-yellow-400", completed: "text-green-400",
@@ -36,9 +34,11 @@ export default function TrainingDetailPage({ params }: { params: { id: string } 
       setLogs((prev) => [...prev.slice(-500), e.data]);
       setTimeout(() => logRef.current?.scrollTo(0, logRef.current.scrollHeight), 50);
     };
-    es.onerror = () => es.close();
+    // Server sends "done" event when job is finished — stop reconnecting
+    es.addEventListener("done", () => es.close());
     return () => es.close();
-  }, [jobId, job?.status]);
+    // "job" intentionally omitted: including the full object causes reconnect on every 3s refetch
+  }, [jobId, job?.status]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const metricsData = run
     ? Object.entries(run.metrics)

@@ -59,8 +59,8 @@ services:
   # ──────────────────────────────
   ml-backend:
     build:
-      context: ./services/ml_backend
-      dockerfile: Dockerfile
+      context: ./services
+      dockerfile: ml_backend/Dockerfile
     container_name: mlops-ml-backend
     depends_on:
       label-studio:

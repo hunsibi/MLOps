@@ -1,10 +1,9 @@
 "use client";
 import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { getDatasets, uploadDataset, deleteDataset } from "@/lib/api";
+import { getDatasets, uploadDataset, deleteDataset, syncDatasetsFromLS } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Upload, Trash2, Tag } from "lucide-react";
+import { Upload, Trash2, Tag, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import type { TaskType } from "@/lib/types";
 
@@ -30,15 +29,40 @@ export default function DatasetsPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["datasets"] }),
   });
 
+  const sync = useMutation({
+    mutationFn: syncDatasetsFromLS,
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ["datasets"] });
+      if (data.synced === 0) alert("새로 동기화된 프로젝트가 없습니다.");
+      else alert(`Label Studio에서 ${data.synced}개 프로젝트를 가져왔습니다.`);
+    },
+    onError: (e: Error) => alert(`동기화 실패: ${e.message}`),
+  });
+
   const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault(); setDragging(false);
-    const dropped = Array.from(e.dataTransfer.files).filter((f) => f.type.startsWith("image/"));
-    setFiles((prev) => [...prev, ...dropped]);
+    e.preventDefault();
+    e.stopPropagation();
+    setDragging(false);
+    const imgExts = /\.(jpe?g|png|gif|webp|bmp|tiff?)$/i;
+    const dropped = Array.from(e.dataTransfer.files).filter(
+      (f) => f.type.startsWith("image/") || imgExts.test(f.name)
+    );
+    if (dropped.length > 0) setFiles((prev) => [...prev, ...dropped]);
   };
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-white">Datasets</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-white">Datasets</h1>
+        <button
+          onClick={() => sync.mutate()}
+          disabled={sync.isPending}
+          className="flex items-center gap-2 bg-gray-800 hover:bg-gray-700 disabled:opacity-50 text-gray-300 text-sm px-3 py-1.5 rounded transition-colors"
+        >
+          <RefreshCw size={14} className={sync.isPending ? "animate-spin" : ""} />
+          {sync.isPending ? "동기화 중..." : "Label Studio 동기화"}
+        </button>
+      </div>
 
       <Card className="bg-gray-900 border-gray-800">
         <CardHeader><CardTitle className="text-sm text-gray-300">새 데이터셋 생성</CardTitle></CardHeader>
@@ -68,8 +92,12 @@ export default function DatasetsPage() {
           </div>
 
           <div
-            onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
-            onDragLeave={() => setDragging(false)}
+            onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); setDragging(true); }}
+            onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDragging(true); }}
+            onDragLeave={(e) => {
+              // relatedTarget이 드롭존 밖일 때만 dragging 해제 (자식 요소 이동 시 false 발생 방지)
+              if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragging(false);
+            }}
             onDrop={handleDrop}
             onClick={() => fileRef.current?.click()}
             className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors ${

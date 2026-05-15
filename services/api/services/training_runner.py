@@ -1,16 +1,14 @@
-import subprocess
-import sys
-import os
-import uuid
+import json
+import time
 import logging
+import httpx
 from pathlib import Path
-from sqlalchemy.orm import Session
-from core.database import TrainingJob, JobStatus
+from core.database import SessionLocal, TrainingJob, JobStatus
 from core.config import settings
 
 logger = logging.getLogger(__name__)
 
-TRAINER_SCRIPT = Path(__file__).parent.parent.parent / "trainer" / "train.py"
+ML_BACKEND = settings.ml_backend_url.rstrip("/")
 
 
 def detect_device() -> str:
@@ -30,7 +28,6 @@ def detect_device() -> str:
 
 
 def start_training_job(
-    db: Session,
     job_id: str,
     dataset_id: str,
     task_type: str,
@@ -38,52 +35,75 @@ def start_training_job(
     epochs: int,
     class_names: list,
 ) -> None:
-    log_dir = Path(settings.data_root) / "logs"
-    log_dir.mkdir(parents=True, exist_ok=True)
-    log_path = str(log_dir / f"{job_id}.log")
-
-    job = db.query(TrainingJob).filter(TrainingJob.id == job_id).first()
-    if job:
-        job.status = JobStatus.running
-        job.log_path = log_path
-        db.commit()
-
-    device = detect_device()
-    cmd = [
-        sys.executable,
-        str(TRAINER_SCRIPT),
-        "--job-id", job_id,
-        "--dataset-id", dataset_id,
-        "--task-type", task_type,
-        "--model-size", model_size,
-        "--epochs", str(epochs),
-        "--device", device,
-        "--data-root", settings.data_root,
-        "--mlflow-uri", settings.mlflow_tracking_uri,
-        "--classes", ",".join(class_names),
-    ]
+    log_path = str(Path(settings.data_root) / "logs" / f"{job_id}.log")
+    db = SessionLocal()
 
     try:
-        with open(log_path, "w") as log_file:
-            proc = subprocess.Popen(
-                cmd,
-                stdout=log_file,
-                stderr=subprocess.STDOUT,
-                text=True,
-            )
-        proc.wait()
+        job = db.query(TrainingJob).filter(TrainingJob.id == job_id).first()
+        if job:
+            job.status = JobStatus.running
+            job.log_path = log_path
+            db.commit()
+
+        # Look up ls_project_id from datasets.json
+        datasets_meta_path = Path(settings.data_root) / "datasets.json"
+        ls_project_id = 0
+        if datasets_meta_path.exists():
+            meta = json.loads(datasets_meta_path.read_text())
+            ds = meta.get(dataset_id, {})
+            ls_project_id = ds.get("ls_project_id", 0)
+
+        device = detect_device()
+        payload = {
+            "job_id":        job_id,
+            "dataset_id":    dataset_id,
+            "task_type":     task_type,
+            "model_size":    model_size,
+            "epochs":        epochs,
+            "device":        device,
+            "data_root":     settings.data_root,
+            "mlflow_uri":    settings.mlflow_tracking_uri,
+            "classes":       ",".join(class_names),
+            "ls_project_id": ls_project_id,
+            "ls_host":       settings.label_studio_host,
+            "ls_api_key":    settings.label_studio_api_key,
+        }
+
+        resp = httpx.post(f"{ML_BACKEND}/train", json=payload, timeout=30)
+        resp.raise_for_status()
+
+        mlflow_run_id = None
+        while True:
+            time.sleep(15)
+            try:
+                status_resp = httpx.get(
+                    f"{ML_BACKEND}/train/status/{job_id}", timeout=10
+                )
+                status_resp.raise_for_status()
+                info = status_resp.json()
+            except Exception:
+                continue
+
+            if info.get("status") in ("completed", "failed"):
+                final = info["status"]
+                rc = info.get("returncode", -1)
+                mlflow_run_id = info.get("mlflow_run_id")
+                break
 
         job = db.query(TrainingJob).filter(TrainingJob.id == job_id).first()
         if job:
-            job.status = JobStatus.completed if proc.returncode == 0 else JobStatus.failed
-            if proc.returncode != 0:
-                job.error_msg = f"Process exited with code {proc.returncode}"
+            job.status = JobStatus.completed if final == "completed" else JobStatus.failed
+            job.mlflow_run_id = mlflow_run_id
+            if final == "failed":
+                job.error_msg = f"Process exited with code {rc}"
             db.commit()
 
     except Exception as e:
-        logger.error(f"Training job {job_id} failed: {e}")
+        logger.error(f"Training job {job_id} dispatch failed: {e}")
         job = db.query(TrainingJob).filter(TrainingJob.id == job_id).first()
         if job:
             job.status = JobStatus.failed
             job.error_msg = str(e)
             db.commit()
+    finally:
+        db.close()

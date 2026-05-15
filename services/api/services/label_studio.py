@@ -66,7 +66,7 @@ class LabelStudioClient:
 
     async def get_project_stats(self, project_id: int) -> Dict:
         async with httpx.AsyncClient() as client:
-            r = await client.get(self._url(f"projects/{project_id}`"), headers=self.headers, timeout=30)
+            r = await client.get(self._url(f"projects/{project_id}"), headers=self.headers, timeout=30)
             r.raise_for_status()
             data = r.json()
             return {

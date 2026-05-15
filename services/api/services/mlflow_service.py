@@ -35,21 +35,23 @@ def get_run(run_id: str) -> Optional[Dict]:
 
 def list_registered_models() -> List[Dict]:
     models = _client.search_registered_models()
-    return [
-        {
+    result = []
+    for m in models:
+        # latest_versions only covers Staging/Production/Archived — fetch all versions explicitly
+        all_versions = _client.search_model_versions(f"name='{m.name}'")
+        result.append({
             "name": m.name,
             "latest_versions": [
                 {
                     "version": v.version,
                     "stage": v.current_stage,
-                    "run_id": v.run_id,
+                    "run_id": v.run_id or None,
                     "status": v.status,
                 }
-                for v in m.latest_versions
+                for v in sorted(all_versions, key=lambda x: int(x.version), reverse=True)
             ],
-        }
-        for m in models
-    ]
+        })
+    return result
 
 
 def get_model_versions(model_name: str) -> List[Dict]:

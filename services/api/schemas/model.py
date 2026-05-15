@@ -5,7 +5,7 @@ from typing import List, Optional
 class ModelVersion(BaseModel):
     version: str
     stage: str
-    run_id: str
+    run_id: Optional[str] = None
     status: str
     description: Optional[str] = None
 

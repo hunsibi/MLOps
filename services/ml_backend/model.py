@@ -26,9 +26,14 @@ class YOLOMLBackend(LabelStudioMLBase):
         self.task = "detect"
 
     def setup(self):
-        model_path = os.path.join(MODELS_ROOT, "pretrained", PRETRAINED_MODEL)
-        if not os.path.exists(model_path):
-            model_path = PRETRAINED_MODEL  # ultralytics auto-download
+        # Production 모델 우선, 없으면 pretrained 사용
+        production_path = os.environ.get("YOLO_PRETRAINED_MODEL", "")
+        if production_path and os.path.exists(production_path):
+            model_path = production_path
+        else:
+            model_path = os.path.join(MODELS_ROOT, "pretrained", PRETRAINED_MODEL)
+            if not os.path.exists(model_path):
+                model_path = PRETRAINED_MODEL  # ultralytics auto-download
         self.model = YOLO(model_path)
         self.task = self._detect_task()
         logger.info(f"Loaded YOLO model: {model_path}, task: {self.task}")
@@ -69,7 +74,13 @@ class YOLOMLBackend(LabelStudioMLBase):
 
         return predictions
 
-    def _resolve_image_path(self, url: str) -> str:
+    def _resolve_image_path(self, url: str):
+        # localhost:8000 is unreachable from inside the container; the same ./data
+        # volume is mounted at /data, so read the file directly from disk instead.
+        if "localhost:8000/data/" in url:
+            from urllib.parse import urlparse
+            path = urlparse(url).path  # e.g. /data/raw/{id}/{fn}
+            return path
         if url.startswith("http://") or url.startswith("https://"):
             resp = requests.get(url, timeout=10)
             resp.raise_for_status()
@@ -111,7 +122,7 @@ class YOLOMLBackend(LabelStudioMLBase):
         annotations = []
 
         if result.masks is None:
-            return self._build_detection_result(result, image_path)
+            return self._build_detection_result(result, img)
 
         for i, mask in enumerate(result.masks):
             cls_id = int(result.boxes.cls[i])

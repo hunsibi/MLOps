@@ -42,7 +42,7 @@ export interface TrainingJobCreate {
 export interface ModelVersion {
   version: string;
   stage: ModelStage;
-  run_id: string;
+  run_id: string | null;
   status: string;
   description: string | null;
 }

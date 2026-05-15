@@ -6,9 +6,14 @@ import type {
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const method = init?.method?.toUpperCase() ?? "GET";
+  const hasBody = method !== "GET" && method !== "HEAD";
   const res = await fetch(`${BASE}${path}`, {
-    headers: { "Content-Type": "application/json", ...init?.headers },
     ...init,
+    headers: {
+      ...(hasBody ? { "Content-Type": "application/json" } : {}),
+      ...init?.headers,
+    },
   });
   if (!res.ok) throw new Error(`API error ${res.status}: ${await res.text()}`);
   return res.json();
@@ -19,6 +24,8 @@ export const getDatasets = () => request<Dataset[]>("/api/v1/datasets/");
 export const getDataset = (id: string) => request<Dataset>(`/api/v1/datasets/${id}`);
 export const deleteDataset = (id: string) =>
   request<{ deleted: string }>(`/api/v1/datasets/${id}`, { method: "DELETE" });
+export const syncDatasetsFromLS = () =>
+  request<{ synced: number; datasets: Dataset[] }>("/api/v1/datasets/sync", { method: "POST" });
 
 export async function uploadDataset(
   name: string, taskType: string, classNames: string[], files: File[]
@@ -34,7 +41,7 @@ export async function uploadDataset(
 }
 
 // Labeling
-export const getLabelingProjects = () => request<any[]>("/api/v1/labeling/projects");
+export const getLabelingProjects = () => request<Record<string, unknown>[]>("/api/v1/labeling/projects");
 export const getLabelingStats = (id: number) =>
   request<LabelingStats>(`/api/v1/labeling/projects/${id}/stats`);
 
